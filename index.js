@@ -1,12 +1,13 @@
 const express = require('express')
 const jwt = require('jsonwebtoken')
-require("dotenv").config();
 const app = express()
 const mongoose = require('mongoose');
+var cors = require('cors')
 const port = 3000
 
 
 app.use(express.json());
+app.use(cors())
 
 app.get('/', (req, res) => {
   res.send('Hello World!')
@@ -69,25 +70,28 @@ mongoose.connect('mongodb+srv://abhashkumardas29:Abhash29@authentication.1vp14.m
     useUnifiedTopology: true
 });
 
-//ADMIN
-//Middleware for admin
-const authenticateAdmin = async (req, res, next) => {
-    const {username, password} = req.headers;
-    const admin = await Admin.find({username, password});
-    if(admin){
-        next();
+//Middleware
+const authenticateJwt = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if(authHeader){
+        const token = authHeader.split(' ')[1];
+        jwt.verify(token, SECRET, (err, user) => {
+            if(err){
+                return res.sendStatus(403);
+            }
+            req.user = user;
+            next();
+        });
     }
     else{
-        res.status(403).json({message: "Authentication fails"});
+        res.sendStatus(401);
     }
 };
-//1. SignUp
+
+//Admin
+//1. SignUp -> working from postman
 app.post("/admin/signup", async (req, res) => {
     const { username, password } = req.body;
-
-    if (!username || !password) {
-        return res.status(400).json({ message: "Please enter username and password" });
-    }
 
     const admin = await Admin.findOne({ username });
 
@@ -96,32 +100,33 @@ app.post("/admin/signup", async (req, res) => {
     } else {
         const obj = { username, password };
         const newAdmin = new Admin(obj);
-        await newAdmin.save();
-        const token = jwt.sign({ username }, SECRET, { expiresIn: "1h" });
-
-        return res.status(200).json({ message: "Admin created successfully", token });
+        newAdmin.save();
+        const token = jwt.sign({ username, role: 'admin' }, SECRET, { expiresIn: "1h" });
+        res.status(200).json({ message: "Admin created successfully", token });
     }
 });
 
-//Admin get req
+//Admin get req  
 app.get('/admins', async (req, res) => {
     const admin = await Admin.find({});
     res.json({admin});
 });
 
-//3. Login -> JWT
-app.post('/admin/login', authenticateAdmin, async (req, res) => {
-    const {username} = req.headers;
-    try {
-        const token = jwt.sign({ username, role: 'admin' }, SECRET, { expiresIn: '1h' });
-        res.status(200).json({ message: "Admin login successful", token });
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+//3. Login -> JWT  -> working from postman
+app.post("/admin/login", async (req, res) => {
+    const {username, password} = req.headers;
+    const admin = await Admin.findOne({username, password});
+    if(admin){
+        const token = jwt.sign({username, role: 'admin'}, SECRET, {expiresIn: '1h'});
+        res.json({message: "Login successful", token});
+    }
+    else{
+        res.status(401).json({message: 'Invalid username or password'});
     }
 });
 
-//4. Post - courses
-app.post('/admin/course', async (req, res) => {
+//4. Post - courses   -> working from postman
+app.post('/admin/course', authenticateJwt, async (req, res) => {
     const newCourse = new Course(req.body);
     await newCourse.save();
     res.status(200).json({message: "Course added successfully"});
@@ -133,7 +138,7 @@ app.get('/admin/courses', async (req, res) => {
     res.json({courses});
 });
 
-//5. Put 
+//5. Put -> working from postman
 app.put('/admin/courses/:courseId', async (req, res) => {
     const course = await Course.findByIdAndUpdate(req.params.courseId, req.body, {new:true});
     if(course){
@@ -143,7 +148,7 @@ app.put('/admin/courses/:courseId', async (req, res) => {
         res.status(404).json({message: "Course not found"});
     }
 });
-//6. Delete
+//6. Delete 
 app.delete('/admin/course/:id', async (req, res) => {
     const course = await Course.findByIdAndDelete(req.params.id);
     if(course){
@@ -156,35 +161,21 @@ app.delete('/admin/course/:id', async (req, res) => {
 
 
 //USER
-//Middleware for user
-const authenticateUser = async (req, res, next) => {
-    const {username, password} = req.headers;
-    const user = User.find({username, password});
-    if(user){
-        next();
-    }
-    else{
-        res.status(403).json({message: "Authentication fails"});
-    }
-};
-//1. SignUp
+//1. SignUp -> working from postman
 app.post("/user/signup", async (req, res) => {
     const { username, password } = req.body;
+    const user = await User.findOne({username});
 
     if (!username || !password) {
         return res.status(400).json({ message: "Please enter username and password" });
     }
-    const user = await User.findOne({ username });
-
     if (user) {
-        return res.status(404).json({ message: "User already exists" });
+        res.status(404).json({ message: "User already exists" });
     } else {
-        const obj = { username, password };
-        const newUser = new User(obj);
+        const newUser = new User({ username, password });
         await newUser.save();
-
-        const token = jwt.sign({ username }, SECRET, { expiresIn: "1h" });
-        return res.status(200).json({ message: "User created successfully", token });
+        const token = jwt.sign({ username, role: 'user' }, SECRET, { expiresIn: "1h" });
+        res.status(200).json({ message: "User created successfully", token });
     }
 });
 
@@ -193,31 +184,27 @@ app.get('/users', async (req, res) => {
     const user = await User.find({});
     res.json({user});
 });
-//3. Login -> JWT
-app.post('/user/login', authenticateUser, async (req, res) => {
+//3. Login -> JWT -> working from postman
+app.post('/user/login', async (req, res) => {
     const {username, password} = req.headers;
-    try {
-        const user = await User.findOne({ username, password }); // Use await to resolve the promise
-
-        if (user) {
-            const token = jwt.sign({ username }, SECRET, { expiresIn: "1h" });
-            res.status(200).json({ message: "User login successful", token });
-        } else {
-            res.status(404).json({ message: "Authentication failed" });
-        }
-    } catch (error) {
-        res.status(500).json({ message: "Internal server error", error: error.message });
+    const user = await User.findOne({username, password});
+    if(user){
+        const token = jwt.sign({username, role: 'user'}, SECRET, {expiresIn: '1h'});
+        res.json({message: "Logged in successful", token});
+    }
+    else{
+        res.status(403).json({message: "Invalid username or password"});
     }
 });
 
-//4. Courses
-app.get('/user/courses', async (req, res) => {
-    const course = await Course.find({});
-    res.json({course});
+//4. Courses -> working from postman
+app.get('/user/courses', authenticateJwt, async (req, res) => {
+    const courses = await Course.find({});
+    res.json({courses});
 });
 
 //5. My purchased courses -. thoda doubt h working pe
-app.post('/user/courses/:id', async (req, res) => {
+app.post('/user/courses/:id', authenticateJwt, async (req, res) => {
     const course = await Course.findById(req.params.courseId);
     if(course){
         const user = await User.findOne({username: req.user.username});
@@ -235,9 +222,9 @@ app.post('/user/courses/:id', async (req, res) => {
     }
 });
 
-//6 Get the purchased courses -> not working
-app.get('/user/purchasedCourses', async (req, res) => {
-    const user = await User.find({username: req.user.username}).populate('purchasedCourses');
+//6 Get the purchased courses -> working
+app.get('/user/purchasedCourses', authenticateJwt, async (req, res) => {
+    const user = await User.findOne({username: req.user.username}).populate('purchasedCourses');
     if(user){
         res.json({purchasedCourses: user.purchasedCourses || []});
     }
@@ -246,10 +233,13 @@ app.get('/user/purchasedCourses', async (req, res) => {
     }
 })
 
+//Me route
+// app.get('/admin/me' , (req, res) => {
+//     const {username} = req.admin;
+//     res.json({username});
+// })
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 })
 
-//Debug and update the each code according to mongodb
-//Merge it with mongodb
-//Connect with frontend
