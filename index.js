@@ -88,10 +88,13 @@ const authenticateJwt = (req, res, next) => {
     }
 };
 
+//Working from frontend
+
 //Admin
-//1. SignUp -> working from postman
+//1. SignUp -> working
 app.post("/admin/signup", async (req, res) => {
     const { username, password } = req.body;
+    console.log(req.body);
 
     const admin = await Admin.findOne({ username });
 
@@ -139,7 +142,7 @@ app.get('/admin/courses', async (req, res) => {
 });
 
 //5. Put -> working from postman
-app.put('/admin/courses/:courseId', async (req, res) => {
+app.put('/admin', async (req, res) => {
     const course = await Course.findByIdAndUpdate(req.params.courseId, req.body, {new:true});
     if(course){
         res.status(200).json({message: "Course updated successfully"});
@@ -234,10 +237,11 @@ app.get('/user/purchasedCourses', authenticateJwt, async (req, res) => {
 })
 
 //Me route
-// app.get('/admin/me' , (req, res) => {
-//     const {username} = req.admin;
-//     res.json({username});
-// })
+app.get('/admin/me' , authenticateJwt, (req, res) => {
+    res.json({
+        username: req.user.username
+    })
+});
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
